@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visualising the stack —— symmetric_trans.cpp</title>
+<style>
+  :root {
+    --fg: #24292e;
+    --muted: #6a737d;
+    --border: #d0d7de;
+    --code-bg: #f6f8fa;
+    --accent: #0969da;
+  }
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+      "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    color: var(--fg);
+    background: #fff;
+    line-height: 1.65;
+    font-size: 16px;
+  }
+  .wrapper {
+    max-width: 840px;
+    margin: 0 auto;
+    padding: 32px 24px;
+  }
+  h1 {
+    font-size: 32px;
+    margin: 0 0 8px;
+    line-height: 1.25;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 16px;
+  }
+  h2 { font-size: 24px; margin-top: 40px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  h3 { font-size: 20px; margin-top: 32px; }
+  p { margin: 16px 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    font-family: "SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace;
+    font-size: 0.9em;
+    background: var(--code-bg);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: "SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace;
+    font-size: 13px;
+    line-height: 1.45;
+    margin: 16px 0;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  blockquote {
+    margin: 16px 0;
+    padding: 0 16px;
+    border-left: 4px solid var(--border);
+    color: var(--muted);
+  }
+  blockquote pre {
+    margin: 8px 0;
+    color: var(--fg);
+  }
+  blockquote strong { color: var(--fg); }
+  table {
+    border-collapse: collapse;
+    margin: 16px 0;
+    width: 100%;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: var(--code-bg); }
+  li { margin: 4px 0; }
+  .ascii { background: #fff; border: 0; padding: 0; }
+
+  /* ---- 栈 / 堆 可视化 ---- */
+  .mem {
+    display: grid;
+    grid-template-columns: minmax(200px, auto) 1fr;
+    gap: 32px;
+    align-items: start;
+    background: #fafbfc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 22px;
+    margin: 18px 0;
+    max-width: 100%;
+  }
+  .vizcap {
+    grid-column: 1 / -1;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    font-family: "SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace;
+    padding: 2px 0 0;
+  }
+  .vizcap code { background: rgba(9,105,218,.06); color: var(--fg); }
+  .colhead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 5px;
+    margin-bottom: 10px;
+  }
+  .colhead .note {
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--accent);
+  }
+  .sframe, .hframe {
+    border: 2px solid #d5dbe2;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    font-family: "SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace;
+    font-size: 12px;
+    color: var(--fg);
+  }
+  .sframe { padding: 8px 12px; margin: 10px 0; white-space: nowrap; }
+  .sframe .fn { font-weight: 700; }
+  .hframe { margin: 10px 0; overflow: hidden; }
+  .hframe .hf-hdr {
+    font-weight: 700;
+    padding: 7px 12px;
+    background: #edf0f3;
+    border-bottom: 1px solid #d5dbe2;
+    white-space: nowrap;
+  }
+  .hframe .hf-hdr .addr { color: var(--muted); font-weight: 600; }
+  .hframe .hf-body { padding: 9px 12px; line-height: 1.75; }
+  .hframe .subframe {
+    border: 1px dashed #b8c1cb;
+    border-radius: 6px;
+    padding: 5px 10px;
+    background: #fdfefe;
+  }
+  .hframe .kv .lbl { color: var(--muted); }
+  .ptr { color: var(--accent); font-weight: 700; }
+  .hframe.tmp { border-style: dashed; }
+  .hframe.tmp .hf-hdr { background: #f5f7f9; }
+  .active {
+    border-color: var(--accent);
+    background: #edf5ff;
+    box-shadow: 0 0 0 3px rgba(9,105,218,.14), 0 2px 6px rgba(9,105,218,.18);
+  }
+  .hframe.active .hf-hdr { background: #dcebfc; }
+  .tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+    background: rgba(9,105,218,.08);
+    border: 1px solid rgba(9,105,218,.30);
+    border-radius: 999px;
+    padding: 0 7px;
+    margin-left: 8px;
+    vertical-align: 2px;
+  }
+  .arrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--accent);
+    font-family: "SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 10px;
+    margin: 4px 0;
+    white-space: nowrap;
+  }
+  .arrow svg { flex: 0 0 auto; }
+  .ellip { color: var(--muted); }
+  @media (max-width: 700px) {
+    .mem { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+<h1 id="visualising-the-stack">Visualising the stack —— symmetric_trans.cpp</h1>
+
+<p>本文针对本目录下 <code>symmetric_trans.cpp</code> 的实际代码，给出其运行时栈/堆的可视化。</p>
+
+<p>先来看一下我们实际的代码（关键部分）：</p>
+
+<div class="language-c++ highlighter-rouge"><div class="highlight"><pre class="highlight"><code>template &lt;typename Promise&gt; struct SymmetricTransFinalAwaiter {
+  bool await_ready() const noexcept { return false; }
+  std::coroutine_handle&lt;&gt;
+  await_suspend(std::coroutine_handle&lt;Promise&gt; single_task_h) noexcept {
+    auto task_handle = single_task_h.promise().task_handle_;
+    return task_handle;              // 对称转移方向 2：single task → task
+  }
+  void await_resume() const noexcept { LOG_FUNCTION(); }
+};
+
+struct SyncTransTask {
+  struct promise_type {
+    std::coroutine_handle&lt;&gt; task_handle_ = nullptr;
+    ...
+    using final_awaiter = SymmetricTransFinalAwaiter&lt;promise_type&gt;;
+    final_awaiter final_suspend() noexcept { return {}; }
+    ...
+  };
+
+  std::coroutine_handle&lt;promise_type&gt; handle_;
+  ~SyncTransTask() {
+    LOG_FUNCTION();
+    if (handle_)
+      handle_.destroy();
+  }
+
+  struct awaiter {
+    std::coroutine_handle&lt;promise_type&gt; handle_;
+    bool await_ready() const noexcept { return false; }
+    std::coroutine_handle&lt;&gt;
+    await_suspend(std::coroutine_handle&lt;&gt; task_handle) noexcept {
+      auto &amp;promise = handle_.promise();
+      promise.task_handle_ = task_handle;   // 对称转移方向 1：task → single task
+      return handle_;
+    }
+    void await_resume() const noexcept { LOG_FUNCTION(); }
+  };
+
+  awaiter operator co_await() const noexcept { return awaiter{handle_}; }
+};
+
+SyncTransTask make_single_task() {
+  return make_single_task_impl&lt;SyncTransTask&gt;(FUNCTION);
+}
+
+Task make_task(int count) {
+  return make_task_impl&lt;SyncTransTask&gt;(FUNCTION, count, &amp;make_single_task);
+}
+
+int main() {
+  LOG_MSG("make task");
+  auto task = make_task(3);
+  TRACK_RESUME(task.handle_.resume());   // 直接 resume 启动，不参与循环
+  return 0;
+}
+</code></pre></div></div>
+
+<p>其中涉及的关键实体如下：</p>
+
+<table>
+<thead>
+<tr>
+<th><code>symmetric_trans.cpp</code></th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>make_task()</code> → <code>make_task_impl&lt;SyncTransTask&gt;</code>（promise 类型 <code>Task</code>）</td>
+<td>外层循环协程，frame 地址 <code>0x0102d750</code></td>
+</tr>
+<tr>
+<td><code>make_single_task()</code> → <code>make_single_task_impl&lt;SyncTransTask&gt;</code>（promise 类型 <code>SyncTransTask</code>）</td>
+<td>每次循环创建并 <code>co_await</code> 的协程，frame 地址 <code>0x0102d7f0</code></td>
+</tr>
+<tr>
+<td><code>SyncTransTask::awaiter::await_suspend</code> 返回 <code>handle_</code>（symmetric_trans.cpp:69-77）</td>
+<td>对称转移方向 1：task → single task</td>
+</tr>
+<tr>
+<td><code>SymmetricTransFinalAwaiter::await_suspend</code> 返回 <code>task_handle_</code>（symmetric_trans.cpp:6-12）</td>
+<td>对称转移方向 2：single task → task</td>
+</tr>
+<tr>
+<td><code>main()</code></td>
+<td>直接调用 <code>task.handle_.resume()</code> 启动协程，不参与循环</td>
+</tr>
+</tbody>
+</table>
+
+<p>程序实际运行输出（单次循环迭代，见 <code>./output/symmetric_trans</code>）：</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>01 | int main() --&gt; make task
+01 | Task make_task(int) --&gt; loop [i:1] make single task
+01 | Task make_task(int) --&gt; loop [i:1] co_await single task, task's: 0x0102d750
+01 | std::coroutine_handle&lt;&gt; SyncTransTask::awaiter::await_suspend(...) --&gt; [D1] save task's: 0x0102d750, trans to single task's: 0x0102d7f0
+01 | SyncTransTask make_single_task() --&gt; single task's: 0x0102d7f0
+01 | void SyncTransTask::final_awaiter::await_suspend --&gt; [D2] single task's: 0x0102d7f0, trans to task's: 0x0102d750
+01 | void SyncTransTask::awaiter::await_resume() const
+01 | Task make_task(int) --&gt; loop [i:1] resumed, end
+01 | SyncTransTask::~SyncTransTask()
+</code></pre></div></div>
+
+<p><code>make_task(3)</code> 协程由 <code>main</code> 中的 <code>task.handle_.resume()</code> 直接恢复启动（而非由另一个协程对称转移而来），因此当 task 协程首次开始执行时，栈/堆状态如下：</p>
+
+<div class="mem">
+  <div class="vizcap">启动：<code>main</code> 直接调用 <code>task.handle_.resume()</code>，非对称转移，栈上多一层 <code>coroutine_handle::resume</code>。</div>
+  <div>
+    <div class="colhead">Stack <span class="note">← top of stack</span></div>
+    <div class="sframe active"><span class="fn">task$resume</span> <span class="tag">active coroutine</span></div>
+    <div class="sframe"><span class="fn">coroutine_handle::resume</span></div>
+    <div class="sframe"><span class="fn">main</span></div>
+  </div>
+  <div>
+    <div class="colhead">Heap</div>
+    <div class="hframe active">
+      <div class="hf-hdr">task frame <span class="addr">0x0102d750</span></div>
+      <div class="hf-body">
+        <div class="subframe"><span class="lbl">Task::promise</span></div>
+        <div class="kv"><span class="lbl">… 其余 frame 内容（参数 / 局部 / 状态）</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<blockquote>
+<p><strong>说明：</strong>coroutine 函数在编译时通常被拆成两部分——处理 coroutine frame 构造/返回值的 “ramp 函数” 与包含用户逻辑的 “coroutine body”。这里用 <code>$resume</code> 后缀指代 “coroutine body” 部分。后续在 <code>co_await GetHandleAwaiter{}</code>（coro.hpp:112）处 task 协程会捕获自己的 handle（<code>0x0102d750</code>），该 awaiter 的 <code>await_suspend</code> 返回 <code>false</code>，立即恢复，不产生新的栈帧。</p>
+</blockquote>
+
+<p>现在 task 协程执行到 <code>co_await single_task;</code>（coro.hpp:116），将发生一次对称转移：</p>
+
+<ul>
+  <li>调用 <code>SyncTransTask::operator co_await()</code> 返回 <code>SyncTransTask::awaiter</code> 对象；</li>
+  <li>task 协程挂起，调用 <code>SyncTransTask::awaiter::await_suspend</code>（symmetric_trans.cpp:69-77），把自身 handle 存入 single task 的 promise（<code>[D1] save task's: 0x0102d750, trans to single task's: 0x0102d7f0</code>）；</li>
+  <li><code>await_suspend</code> 返回 single task 的 handle <code>0x0102d7f0</code>，编译器将其编译为一次尾调用 / <code>jmp</code>：先弹出 task 的 <code>$resume</code> 帧，再跳转到 single task 的 <code>$resume</code> 帧。</li>
+</ul>
+
+<p>因此 single task 被恢复后的栈/堆如下（栈帧数量与 task 首次启动时<strong>相同</strong>，没有增长）：</p>
+
+<div class="mem">
+  <div class="vizcap">[D1] 对称转移：<code>awaiter::await_suspend</code> 把 task handle（<code>0x0102d750</code>）存入 single task 的 promise，返回 single task handle —— 尾调用弹出 task 帧，跳入 single task。</div>
+  <div>
+    <div class="colhead">Stack <span class="note">← top of stack</span></div>
+    <div class="sframe active"><span class="fn">single_task$resume</span> <span class="tag">active coroutine</span></div>
+    <div class="sframe"><span class="fn">coroutine_handle::resume</span></div>
+    <div class="sframe"><span class="fn">main</span></div>
+  </div>
+  <div>
+    <div class="colhead">Heap</div>
+    <div class="hframe active">
+      <div class="hf-hdr">single task frame <span class="addr">0x0102d7f0</span></div>
+      <div class="hf-body">
+        <div class="subframe">
+          <div><span class="lbl">SyncTransTask::promise</span></div>
+          <div class="kv"><span class="lbl">task_handle_</span> = <span class="ptr">0x0102d750</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="arrow">
+      <svg width="14" height="26" viewBox="0 0 14 26" aria-hidden="true"><path d="M7 0v20M7 20l-4.5-5M7 20l4.5-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>task_handle_ 引用 → task frame</span>
+    </div>
+    <div class="hframe">
+      <div class="hf-hdr">task frame <span class="addr">0x0102d750</span></div>
+      <div class="hf-body">
+        <div class="subframe"><span class="lbl">Task::promise</span></div>
+      </div>
+    </div>
+    <div class="hframe tmp">
+      <div class="hf-hdr">single_task 临时对象 (coro_)</div>
+      <div class="hf-body"><div class="kv"><span class="lbl">handle_</span> = <span class="addr">0x0102d7f0</span></div></div>
+    </div>
+  </div>
+</div>
+
+<blockquote>
+<p><strong>注意：</strong>这里的栈<strong>没有</strong>在 <code>awaiter::await_suspend</code> → <code>single_task.resume()</code> 之间层层嵌套帧，而是把 <code>await_suspend</code> 返回的 handle 当作尾调用目标，弹出当前帧后直接跳转。这正是对称转移的意义。</p>
+</blockquote>
+
+<p>single task 协程随后同步执行完毕：<code>make_single_task_impl</code> 在 <code>co_await GetHandleAwaiter{}</code>（coro.hpp:100）处捕获自身 handle 并打印 <code>single task's: 0x0102d7f0</code>，<code>co_return</code> 后到达 closing curly brace，求值 <code>co_await promise.final_suspend()</code>。</p>
+
+<p><code>SymmetricTransFinalAwaiter::await_suspend</code>（symmetric_trans.cpp:6-12）挂起 single task，读取 promise 中保存的 <code>task_handle_</code>（<code>[D2] single task's: 0x0102d7f0, trans to task's: 0x0102d750</code>）并返回它——再次对称转移（尾调用）恢复 task 协程。single task 被恢复后的栈/堆如下：</p>
+
+<div class="mem">
+  <div class="vizcap">[D2] 对称转移：<code>final_suspend</code> 挂起 single task，返回 promise 中保存的 <code>task_handle_</code>，尾调用跳回 task。</div>
+  <div>
+    <div class="colhead">Stack <span class="note">← top of stack</span></div>
+    <div class="sframe active"><span class="fn">task$resume</span> <span class="tag">active coroutine</span></div>
+    <div class="sframe"><span class="fn">coroutine_handle::resume</span></div>
+    <div class="sframe"><span class="fn">main</span></div>
+  </div>
+  <div>
+    <div class="colhead">Heap</div>
+    <div class="hframe">
+      <div class="hf-hdr">single task frame <span class="addr">0x0102d7f0</span></div>
+      <div class="hf-body">
+        <div class="subframe">
+          <div><span class="lbl">SyncTransTask::promise</span></div>
+          <div class="kv"><span class="lbl">task_handle_</span> = <span class="addr">0x0102d750</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="arrow">
+      <svg width="14" height="26" viewBox="0 0 14 26" aria-hidden="true"><path d="M7 0v20M7 20l-4.5-5M7 20l4.5-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>task_handle_ 引用 → task frame</span>
+    </div>
+    <div class="hframe active">
+      <div class="hf-hdr">task frame <span class="addr">0x0102d750</span></div>
+      <div class="hf-body">
+        <div class="subframe"><span class="lbl">Task::promise</span></div>
+      </div>
+    </div>
+    <div class="hframe tmp">
+      <div class="hf-hdr">single_task 临时对象 (coro_)</div>
+      <div class="hf-body"><div class="kv"><span class="lbl">handle_</span> = <span class="addr">0x0102d7f0</span></div></div>
+    </div>
+  </div>
+</div>
+
+<p>task 协程恢复后继续执行：调用 <code>SyncTransTask::awaiter::await_resume</code>（symmetric_trans.cpp:78），打印 <code>loop [i:1] resumed, end</code>，然后在分号处销毁 <code>single_task</code> 临时对象（<code>SyncTransTask::~SyncTransTask</code> 调用 <code>handle_.destroy()</code>，销毁 <code>0x0102d7f0</code> 处的 frame）。之后栈/堆回到与迭代开始时完全相同的状态：</p>
+
+<div class="mem">
+  <div class="vizcap">迭代结束：<code>~SyncTransTask</code> 调用 <code>handle_.destroy()</code> 销毁 <code>0x0102d7f0</code> 的 frame，栈与堆回到迭代开始时的状态。</div>
+  <div>
+    <div class="colhead">Stack <span class="note">← top of stack</span></div>
+    <div class="sframe active"><span class="fn">task$resume</span> <span class="tag">active coroutine</span></div>
+    <div class="sframe"><span class="fn">coroutine_handle::resume</span></div>
+    <div class="sframe"><span class="fn">main</span></div>
+  </div>
+  <div>
+    <div class="colhead">Heap</div>
+    <div class="hframe active">
+      <div class="hf-hdr">task frame <span class="addr">0x0102d750</span></div>
+      <div class="hf-body">
+        <div class="subframe"><span class="lbl">Task::promise</span></div>
+        <div class="kv"><span class="lbl">… 其余 frame 内容（参数 / 局部 / 状态）</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>可以看到，每轮循环结束时栈帧数与协程 frame 数与开始时完全一致，且<strong>不会增长</strong>。因此可以无限循环（如 <code>count</code> 传 <code>1'000'000</code>）而只使用恒定量的栈空间。</p>
+
+<blockquote>
+<p>一个旁证：程序输出中每一轮迭代的 single task 地址都是同一个 <code>0x0102d7f0</code>——上一轮结束时其 frame 被销毁释放，下一轮创建的新 frame 复用了同一块内存，进一步说明所有资源都被及时回收、使用量恒定。</p>
+</blockquote>
+
+</div>
+</body>
+</html>
