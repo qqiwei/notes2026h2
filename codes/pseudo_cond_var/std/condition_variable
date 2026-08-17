@@ -1,0 +1,34 @@
+#pragma once
+
+#include "../nptl/pthread_cond.h"
+#include "mutex"
+
+namespace std {
+
+class condition_variable {
+public:
+  condition_variable() noexcept { pthread_cond_init(&cond_); }
+  condition_variable(const condition_variable &) = delete;
+  condition_variable &operator=(const condition_variable &) = delete;
+
+  ~condition_variable() noexcept { pthread_cond_destroy(&cond_); }
+
+  void wait(unique_lock<mutex> &lock) {
+    pthread_cond_wait(&cond_, lock.mutex()->native_handle());
+  }
+
+  void notify_one() noexcept { pthread_cond_signal(&cond_); }
+
+  void notify_all() noexcept { pthread_cond_broadcast(&cond_); }
+
+  // Predicate waiting: guards against spurious wakeups
+  template <typename Pred> void wait(unique_lock<mutex> &lock, Pred pred) {
+    while (!pred())
+      wait(lock);
+  }
+
+private:
+  pthread_cond_t cond_;
+};
+
+} // namespace std

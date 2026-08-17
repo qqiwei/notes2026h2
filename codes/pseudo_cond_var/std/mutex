@@ -1,0 +1,53 @@
+#pragma once
+
+#include "../nptl/pthread_mutex.h"
+
+namespace std {
+
+class mutex {
+public:
+  mutex() noexcept { pthread_mutex_init(&m_); }
+  mutex(const mutex &) = delete;
+  mutex &operator=(const mutex &) = delete;
+
+  void lock() noexcept { pthread_mutex_lock(&m_); }
+  void unlock() noexcept { pthread_mutex_unlock(&m_); }
+  bool try_lock() noexcept { return pthread_mutex_trylock(&m_); }
+
+  pthread_mutex_t *native_handle() noexcept { return &m_; }
+
+private:
+  pthread_mutex_t m_;
+};
+
+template <typename Mutex> class unique_lock {
+public:
+  explicit unique_lock(Mutex &m) noexcept : m_(&m) { m_->lock(); }
+  ~unique_lock() noexcept {
+    if (owns_)
+      m_->unlock();
+  }
+  unique_lock(const unique_lock &) = delete;
+  unique_lock &operator=(const unique_lock &) = delete;
+  unique_lock(unique_lock &&o) noexcept : m_(o.m_), owns_(o.owns_) {
+    o.m_ = nullptr;
+    o.owns_ = false;
+  }
+
+  Mutex *mutex() const noexcept { return m_; }
+  bool owns_lock() const noexcept { return owns_; }
+  void lock() {
+    m_->lock();
+    owns_ = true;
+  }
+  void unlock() {
+    m_->unlock();
+    owns_ = false;
+  }
+
+private:
+  Mutex *m_ = nullptr;
+  bool owns_ = false;
+};
+
+} // namespace std
